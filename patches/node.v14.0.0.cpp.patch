@@ -1,6 +1,6 @@
 --- node/deps/v8/include/v8.h
 +++ node/deps/v8/include/v8.h
-@@ -9045,10 +9045,14 @@
+@@ -9525,10 +9525,14 @@
     */
    static void SetFlagsFromCommandLine(int* argc,
                                        char** argv,
@@ -17,7 +17,7 @@
     * Initializes V8. This function needs to be called before the first Isolate
 --- node/deps/v8/src/api/api.cc
 +++ node/deps/v8/src/api/api.cc
-@@ -913,10 +913,38 @@
+@@ -927,10 +927,38 @@
  
  void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
    i::FlagList::SetFlagsFromCommandLine(argc, argv, remove_flags);
@@ -58,7 +58,7 @@
  
 --- node/deps/v8/src/codegen/compiler.cc
 +++ node/deps/v8/src/codegen/compiler.cc
-@@ -2008,11 +2008,11 @@
+@@ -2045,11 +2045,11 @@
      // First check per-isolate compilation cache.
      maybe_result = compilation_cache->LookupScript(
          source, script_details.name_obj, script_details.line_offset,
@@ -73,13 +73,13 @@
        HistogramTimerScope timer(isolate->counters()->compile_deserialize());
 --- node/deps/v8/src/objects/js-objects.cc
 +++ node/deps/v8/src/objects/js-objects.cc
-@@ -5478,10 +5478,13 @@
+@@ -5524,10 +5524,13 @@
  
    // Check if we should print {function} as a class.
    Handle<Object> maybe_class_positions = JSReceiver::GetDataProperty(
        function, isolate->factory()->class_positions_symbol());
    if (maybe_class_positions->IsClassPositions()) {
-+    if (String::cast(Script::cast(shared_info->script()).source())->IsUndefined(isolate)) {
++    if (String::cast(Script::cast(shared_info->script()).source()).IsUndefined(isolate)) {
 +      return isolate->factory()->NewStringFromAsciiChecked("class {}");
 +    }
      ClassPositions class_positions =
@@ -89,7 +89,7 @@
      Handle<String> script_source(
 --- node/deps/v8/src/objects/shared-function-info-inl.h
 +++ node/deps/v8/src/objects/shared-function-info-inl.h
-@@ -506,10 +506,18 @@
+@@ -493,10 +493,18 @@
    // check if it is old. Note, this is done this way since this function can be
    // called by the concurrent marker.
    Object data = function_data();
@@ -112,31 +112,31 @@
 +++ node/deps/v8/src/parsing/parsing.cc
 @@ -20,10 +20,11 @@
  
- bool ParseProgram(ParseInfo* info, Isolate* isolate,
+ bool ParseProgram(ParseInfo* info, Handle<Script> script, Isolate* isolate,
                    ReportErrorsAndStatisticsMode mode) {
    DCHECK(info->is_toplevel());
    DCHECK_NULL(info->literal());
-+  if (String::cast(info->script()->source())->IsUndefined(isolate)) return false;
++  if (String::cast(script->source()).IsUndefined(isolate)) return false;
  
    VMState<PARSER> state(isolate);
  
    // Create a character stream for the parser.
-   Handle<String> source(String::cast(info->script()->source()), isolate);
-@@ -60,10 +61,11 @@
- bool ParseFunction(ParseInfo* info, Handle<SharedFunctionInfo> shared_info,
-                    Isolate* isolate, ReportErrorsAndStatisticsMode mode) {
-   DCHECK(!info->is_toplevel());
+   Handle<String> source(String::cast(script->source()), isolate);
+@@ -63,10 +64,11 @@
    DCHECK(!shared_info.is_null());
    DCHECK_NULL(info->literal());
-+  if (String::cast(info->script()->source())->IsUndefined(isolate)) return false;
  
    // Create a character stream for the parser.
-   Handle<String> source(String::cast(info->script()->source()), isolate);
+   Handle<Script> script(Script::cast(shared_info->script()), isolate);
++  if (String::cast(script->source()).IsUndefined(isolate)) return false;
+   Handle<String> source(String::cast(script->source()), isolate);
    isolate->counters()->total_parse_size()->Increment(source->length());
    std::unique_ptr<Utf16CharacterStream> stream(
+       ScannerStream::For(isolate, source, shared_info->StartPosition(),
+                          shared_info->EndPosition()));
 --- node/deps/v8/src/snapshot/code-serializer.cc
 +++ node/deps/v8/src/snapshot/code-serializer.cc
-@@ -410,26 +410,39 @@
+@@ -404,25 +404,38 @@
  
  SerializedCodeData::SanityCheckResult SerializedCodeData::SanityCheck(
      Isolate* isolate, uint32_t expected_source_hash) const {
@@ -151,8 +151,7 @@
 -  uint32_t source_hash = GetHeaderValue(kSourceHashOffset);
    uint32_t flags_hash = GetHeaderValue(kFlagHashOffset);
    uint32_t payload_length = GetHeaderValue(kPayloadLengthOffset);
-   uint32_t c1 = GetHeaderValue(kChecksumPartAOffset);
-   uint32_t c2 = GetHeaderValue(kChecksumPartBOffset);
+   uint32_t c = GetHeaderValue(kChecksumOffset);
 -  if (version_hash != Version::Hash()) return VERSION_MISMATCH;
 -  if (source_hash != expected_source_hash) return SOURCE_MISMATCH;
 -  if (flags_hash != FlagList::Hash()) return FLAGS_MISMATCH;
@@ -169,12 +168,12 @@
        POINTER_SIZE_ALIGN(kHeaderSize +
                           GetHeaderValue(kNumReservationsOffset) * kInt32Size);
 -  if (payload_length > max_payload_length) return LENGTH_MISMATCH;
--  if (!Checksum(ChecksummedContent()).Check(c1, c2)) return CHECKSUM_MISMATCH;
+-  if (Checksum(ChecksummedContent()) != c) return CHECKSUM_MISMATCH;
 +  if (payload_length > max_payload_length) {
 +    base::OS::PrintError("Pkg: LENGTH_MISMATCH\n");
 +    return LENGTH_MISMATCH;
 +  }
-+  if (!Checksum(ChecksummedContent()).Check(c1, c2)) {
++  if (Checksum(ChecksummedContent()) != c) {
 +    base::OS::PrintError("Pkg: CHECKSUM_MISMATCH\n");
 +    return CHECKSUM_MISMATCH;
 +  }
@@ -265,7 +264,7 @@ new file mode 100644
    setupTraceCategoryState();
    setupInspectorHooks();
    setupWarningHandler();
-@@ -81,11 +86,11 @@
+@@ -84,11 +89,11 @@
      configurable: false,
      value: process.argv[0]
    });
@@ -280,12 +279,12 @@ new file mode 100644
  
 --- node/lib/internal/modules/cjs/loader.js
 +++ node/lib/internal/modules/cjs/loader.js
-@@ -52,14 +52,12 @@
- const vm = require('vm');
+@@ -57,14 +57,12 @@
  const assert = require('internal/assert');
  const fs = require('fs');
  const internalFS = require('internal/fs/utils');
  const path = require('path');
+ const { emitWarningSync } = require('internal/process/warning');
 -const {
 -  internalModuleReadJSON,
 -  internalModuleStat
@@ -299,7 +298,7 @@ new file mode 100644
    stripBOM,
 --- node/lib/vm.js
 +++ node/lib/vm.js
-@@ -62,10 +62,11 @@
+@@ -73,10 +73,11 @@
        columnOffset = 0,
        cachedData,
        produceCachedData = false,
@@ -311,7 +310,7 @@ new file mode 100644
      validateString(filename, 'options.filename');
      validateInt32(lineOffset, 'options.lineOffset');
      validateInt32(columnOffset, 'options.columnOffset');
-@@ -89,11 +90,12 @@
+@@ -100,11 +101,12 @@
              filename,
              lineOffset,
              columnOffset,
@@ -327,8 +326,8 @@ new file mode 100644
      if (importModuleDynamically !== undefined) {
 --- node/node.gyp
 +++ node/node.gyp
-@@ -26,10 +26,11 @@
-     'node_intermediate_lib_type%': 'static_library',
+@@ -28,10 +28,11 @@
+     'node_builtin_modules_path%': '',
      'library_files': [
        'lib/internal/bootstrap/environment.js',
        'lib/internal/bootstrap/loaders.js',
@@ -341,7 +340,7 @@ new file mode 100644
        'lib/internal/bootstrap/switches/is_not_main_thread.js',
 --- node/src/inspector_agent.cc
 +++ node/src/inspector_agent.cc
-@@ -771,12 +771,10 @@
+@@ -760,12 +760,10 @@
      CHECK_EQ(0, uv_async_init(parent_env_->event_loop(),
                                &start_io_thread_async,
                                StartIoThreadAsyncCallback));
@@ -356,7 +355,21 @@ new file mode 100644
        {
 --- node/src/node.cc
 +++ node/src/node.cc
-@@ -378,10 +378,12 @@
+@@ -338,10 +338,13 @@
+   }
+ 
+   return scope.EscapeMaybe(result);
+ }
+ 
++static
++MaybeLocal<Value> StartExecution(Environment* env, const char* main_script_id);
++
+ MaybeLocal<Value> Environment::RunBootstrapping() {
+   EscapableHandleScope scope(isolate_);
+ 
+   CHECK(!has_run_bootstrapping_code());
+ 
+@@ -361,10 +364,12 @@
    CHECK(req_wrap_queue()->IsEmpty());
    CHECK(handle_wrap_queue()->IsEmpty());
  
@@ -369,7 +382,7 @@ new file mode 100644
  
  void MarkBootstrapComplete(const FunctionCallbackInfo<Value>& args) {
    Environment* env = Environment::GetCurrent(args);
-@@ -498,17 +500,10 @@
+@@ -525,17 +530,10 @@
  #endif  // __POSIX__
  
  
@@ -387,7 +400,7 @@ new file mode 100644
      const int fd = &s - stdio;
      if (fstat(fd, &s.stat) == 0)
        continue;
-@@ -520,14 +515,10 @@
+@@ -547,14 +545,10 @@
        ABORT();
      if (fstat(fd, &s.stat) != 0)
        ABORT();
@@ -404,7 +417,7 @@ new file mode 100644
    memset(&act, 0, sizeof(act));
 --- node/src/node_contextify.cc
 +++ node/src/node_contextify.cc
-@@ -67,10 +67,11 @@
+@@ -70,10 +70,11 @@
  using v8::ScriptOrigin;
  using v8::ScriptOrModule;
  using v8::String;
@@ -416,7 +429,7 @@ new file mode 100644
  using v8::WeakCallbackType;
  
  // The vm module executes code in a sandboxed environment with a different
-@@ -652,15 +653,16 @@
+@@ -661,15 +662,16 @@
    Local<Integer> line_offset;
    Local<Integer> column_offset;
    Local<ArrayBufferView> cached_data_buf;
@@ -434,7 +447,7 @@ new file mode 100644
      CHECK(args[3]->IsNumber());
      column_offset = args[3].As<Integer>();
      if (!args[4]->IsUndefined()) {
-@@ -675,10 +677,11 @@
+@@ -684,10 +686,11 @@
            ContextifyContext::ContextFromContextifiedSandbox(
                env, args[6].As<Object>());
        CHECK_NOT_NULL(sandbox);
@@ -446,7 +459,7 @@ new file mode 100644
      column_offset = Integer::New(isolate, 0);
    }
  
-@@ -729,10 +732,14 @@
+@@ -738,10 +741,14 @@
  
    TryCatchScope try_catch(env);
    ShouldNotAbortOnUncaughtScope no_abort_scope(env);
@@ -461,7 +474,7 @@ new file mode 100644
        &source,
        compile_options);
  
-@@ -745,10 +752,17 @@
+@@ -754,10 +761,17 @@
          TRACING_CATEGORY_NODE2(vm, script),
          "ContextifyScript::New",
          contextify_script);
@@ -479,7 +492,7 @@ new file mode 100644
    if (compile_options == ScriptCompiler::kConsumeCodeCache) {
      args.This()->Set(
          env->context(),
-@@ -770,10 +784,15 @@
+@@ -779,10 +793,15 @@
      args.This()->Set(
          env->context(),
          env->cached_data_produced_string(),
@@ -497,7 +510,7 @@ new file mode 100644
  }
 --- node/src/node_main.cc
 +++ node/src/node_main.cc
-@@ -20,10 +20,12 @@
+@@ -20,22 +20,21 @@
  // USE OR OTHER DEALINGS IN THE SOFTWARE.
  
  #include "node.h"
@@ -510,7 +523,22 @@ new file mode 100644
  #include <VersionHelpers.h>
  #include <WinError.h>
  
-@@ -67,11 +69,11 @@
+ int wmain(int argc, wchar_t* wargv[]) {
+-  // Windows Server 2012 (not R2) is supported until 10/10/2023, so we allow it
+-  // to run in the experimental support tier.
+-  if (!IsWindows8Point1OrGreater() &&
+-      !(IsWindowsServer() && IsWindows8OrGreater())) {
+-    fprintf(stderr, "This application is only supported on Windows 8.1, "
+-                    "Windows Server 2012 R2, or higher.");
++  if (!IsWindows7OrGreater()) {
++    fprintf(stderr, "This application is only supported on Windows 7, "
++                    "Windows Server 2008 R2, or higher.");
+     exit(ERROR_EXE_MACHINE_TYPE_MISMATCH);
+   }
+ 
+   // Convert argv to UTF8
+   char** argv = new char*[argc + 1];
+@@ -70,11 +69,11 @@
        exit(1);
      }
    }
@@ -523,7 +551,7 @@ new file mode 100644
  // UNIX
  #ifdef __linux__
  #include <elf.h>
-@@ -121,8 +123,75 @@
+@@ -124,8 +123,75 @@
  #endif
    // Disable stdio buffering, it interacts poorly with printf()
    // calls elsewhere in the program (e.g., any logging from V8.)
@@ -602,7 +630,7 @@ new file mode 100644
 +}
 --- node/src/node_options.cc
 +++ node/src/node_options.cc
-@@ -299,10 +299,11 @@
+@@ -233,10 +233,11 @@
  // XXX: If you add an option here, please also add it to doc/node.1 and
  // doc/api/cli.md
  // TODO(addaleax): Make that unnecessary.

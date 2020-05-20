@@ -1,6 +1,6 @@
 --- node/deps/v8/include/v8.h
 +++ node/deps/v8/include/v8.h
-@@ -9045,10 +9045,14 @@
+@@ -9224,10 +9224,14 @@
     */
    static void SetFlagsFromCommandLine(int* argc,
                                        char** argv,
@@ -17,7 +17,7 @@
     * Initializes V8. This function needs to be called before the first Isolate
 --- node/deps/v8/src/api/api.cc
 +++ node/deps/v8/src/api/api.cc
-@@ -913,10 +913,38 @@
+@@ -914,10 +914,38 @@
  
  void V8::SetFlagsFromCommandLine(int* argc, char** argv, bool remove_flags) {
    i::FlagList::SetFlagsFromCommandLine(argc, argv, remove_flags);
@@ -58,7 +58,7 @@
  
 --- node/deps/v8/src/codegen/compiler.cc
 +++ node/deps/v8/src/codegen/compiler.cc
-@@ -2008,11 +2008,11 @@
+@@ -2018,11 +2018,11 @@
      // First check per-isolate compilation cache.
      maybe_result = compilation_cache->LookupScript(
          source, script_details.name_obj, script_details.line_offset,
@@ -73,7 +73,7 @@
        HistogramTimerScope timer(isolate->counters()->compile_deserialize());
 --- node/deps/v8/src/objects/js-objects.cc
 +++ node/deps/v8/src/objects/js-objects.cc
-@@ -5478,10 +5478,13 @@
+@@ -5506,10 +5506,13 @@
  
    // Check if we should print {function} as a class.
    Handle<Object> maybe_class_positions = JSReceiver::GetDataProperty(
@@ -89,7 +89,7 @@
      Handle<String> script_source(
 --- node/deps/v8/src/objects/shared-function-info-inl.h
 +++ node/deps/v8/src/objects/shared-function-info-inl.h
-@@ -506,10 +506,18 @@
+@@ -488,10 +488,18 @@
    // check if it is old. Note, this is done this way since this function can be
    // called by the concurrent marker.
    Object data = function_data();
@@ -265,7 +265,7 @@ new file mode 100644
    setupTraceCategoryState();
    setupInspectorHooks();
    setupWarningHandler();
-@@ -81,11 +86,11 @@
+@@ -84,11 +89,11 @@
      configurable: false,
      value: process.argv[0]
    });
@@ -299,7 +299,7 @@ new file mode 100644
    stripBOM,
 --- node/lib/vm.js
 +++ node/lib/vm.js
-@@ -62,10 +62,11 @@
+@@ -73,10 +73,11 @@
        columnOffset = 0,
        cachedData,
        produceCachedData = false,
@@ -311,7 +311,7 @@ new file mode 100644
      validateString(filename, 'options.filename');
      validateInt32(lineOffset, 'options.lineOffset');
      validateInt32(columnOffset, 'options.columnOffset');
-@@ -89,11 +90,12 @@
+@@ -100,11 +101,12 @@
              filename,
              lineOffset,
              columnOffset,
@@ -327,8 +327,8 @@ new file mode 100644
      if (importModuleDynamically !== undefined) {
 --- node/node.gyp
 +++ node/node.gyp
-@@ -26,10 +26,11 @@
-     'node_intermediate_lib_type%': 'static_library',
+@@ -28,10 +28,11 @@
+     'node_builtin_modules_path%': '',
      'library_files': [
        'lib/internal/bootstrap/environment.js',
        'lib/internal/bootstrap/loaders.js',
@@ -356,7 +356,7 @@ new file mode 100644
        {
 --- node/src/node.cc
 +++ node/src/node.cc
-@@ -378,10 +378,12 @@
+@@ -361,10 +361,12 @@
    CHECK(req_wrap_queue()->IsEmpty());
    CHECK(handle_wrap_queue()->IsEmpty());
  
@@ -369,7 +369,7 @@ new file mode 100644
  
  void MarkBootstrapComplete(const FunctionCallbackInfo<Value>& args) {
    Environment* env = Environment::GetCurrent(args);
-@@ -498,17 +500,10 @@
+@@ -515,17 +517,10 @@
  #endif  // __POSIX__
  
  
@@ -387,7 +387,7 @@ new file mode 100644
      const int fd = &s - stdio;
      if (fstat(fd, &s.stat) == 0)
        continue;
-@@ -520,14 +515,10 @@
+@@ -537,14 +532,10 @@
        ABORT();
      if (fstat(fd, &s.stat) != 0)
        ABORT();
@@ -404,7 +404,7 @@ new file mode 100644
    memset(&act, 0, sizeof(act));
 --- node/src/node_contextify.cc
 +++ node/src/node_contextify.cc
-@@ -67,10 +67,11 @@
+@@ -70,10 +70,11 @@
  using v8::ScriptOrigin;
  using v8::ScriptOrModule;
  using v8::String;
@@ -416,7 +416,7 @@ new file mode 100644
  using v8::WeakCallbackType;
  
  // The vm module executes code in a sandboxed environment with a different
-@@ -652,15 +653,16 @@
+@@ -661,15 +662,16 @@
    Local<Integer> line_offset;
    Local<Integer> column_offset;
    Local<ArrayBufferView> cached_data_buf;
@@ -434,7 +434,7 @@ new file mode 100644
      CHECK(args[3]->IsNumber());
      column_offset = args[3].As<Integer>();
      if (!args[4]->IsUndefined()) {
-@@ -675,10 +677,11 @@
+@@ -684,10 +686,11 @@
            ContextifyContext::ContextFromContextifiedSandbox(
                env, args[6].As<Object>());
        CHECK_NOT_NULL(sandbox);
@@ -446,7 +446,7 @@ new file mode 100644
      column_offset = Integer::New(isolate, 0);
    }
  
-@@ -729,10 +732,14 @@
+@@ -738,10 +741,14 @@
  
    TryCatchScope try_catch(env);
    ShouldNotAbortOnUncaughtScope no_abort_scope(env);
@@ -461,7 +461,7 @@ new file mode 100644
        &source,
        compile_options);
  
-@@ -745,10 +752,17 @@
+@@ -754,10 +761,17 @@
          TRACING_CATEGORY_NODE2(vm, script),
          "ContextifyScript::New",
          contextify_script);
@@ -479,7 +479,7 @@ new file mode 100644
    if (compile_options == ScriptCompiler::kConsumeCodeCache) {
      args.This()->Set(
          env->context(),
-@@ -770,10 +784,15 @@
+@@ -779,10 +793,15 @@
      args.This()->Set(
          env->context(),
          env->cached_data_produced_string(),
@@ -602,7 +602,7 @@ new file mode 100644
 +}
 --- node/src/node_options.cc
 +++ node/src/node_options.cc
-@@ -299,10 +299,11 @@
+@@ -233,10 +233,11 @@
  // XXX: If you add an option here, please also add it to doc/node.1 and
  // doc/api/cli.md
  // TODO(addaleax): Make that unnecessary.
